@@ -96,3 +96,15 @@ def parse_opening_name(raw_eco):
     if raw_eco.startswith("http"):
         return unquote(raw_eco.split("/")[-1]).replace("-", " ").strip().lower()
     return raw_eco.strip().lower()
+
+"""
+Creates aggregate win/loss summary data based on games Dataframe
+"""
+def create_games_summary_dataframe(games_df):
+    summary_df = (
+        games_df.groupby(["win_loss", "eco", "opening", "time_class"])
+        .agg(game_count=("win_loss", "count"))
+        .reset_index()
+    )
+    summary_df = summary_df.sort_values(by=["time_class", "win_loss", "game_count"], ascending=[False, False, False])
+    return summary_df

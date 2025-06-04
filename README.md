@@ -11,9 +11,10 @@ This project is a Python based batch data pipeline ingests and processes player 
 - Clone repo
 - Pull latest from develop
 - cd chess
-- python -m venv .venv
+- python3 -m venv .venv
 - source .venv\Scripts\activate (on Windows)
+- python -m pip install --upgrade pip
 - pip install -r requirements.txt
 
 ### Usage
-python src/main.py <--username optional_username> <--thisyearonly>
+python ./src/main.py <optional --username username --allarchives>

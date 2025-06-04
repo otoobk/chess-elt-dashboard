@@ -1,0 +1,5 @@
+pathlib
+duckdb
+argparse
+pandas
+numpy
