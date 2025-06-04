@@ -1,0 +1,10 @@
+username: "magnuscarlsen"
+base_url: "https://api.chess.com/pub/player"
+archives_suburl: "games/archives"
+raw_dir: "./data/raw"
+clean_dir: "./data/clean"
+all_archives: "False"
+
+headers:
+  User-Agent: "Mozilla/5.0"
+  Accept: "application/json"
