@@ -114,14 +114,15 @@ def create_openings_tree(openings_df):
     for _, row in openings_df.iterrows():
         moves = row["moves_list"]
         eco = row["eco"]
+        family = row["family"]
         name = row["name"]
-        openings_tree.insert(eco, moves, name)
+        openings_tree.insert(eco, family, moves, name)
 
     #openings_tree.print_tree()
     return openings_tree
 
 def calculate_eco_opening(games_df, openings_tree):
-    games_df[["eco", "opening"]] = games_df.apply(
+    games_df[["eco", "family", "opening"]] = games_df.apply(
             lambda row: pd.Series(openings_tree.search(row["moves"])), axis=1
         )
     games_df = games_df.drop("moves", axis=1)
