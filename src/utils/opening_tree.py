@@ -2,6 +2,7 @@ class OpeningTreeNode:
     def __init__(self, move=None):
         self.move = move
         self.eco_code = None
+        self.family = None
         self.opening_name = None
         self.children = {}
 
@@ -9,32 +10,35 @@ class OpeningTree:
     def __init__(self):
         self.root = OpeningTreeNode()
 
-    def insert(self, eco_code, moves_list, opening_name):
+    def insert(self, eco_code, family, moves_list, opening_name):
         node = self.root
         for move in moves_list:
             if move not in node.children:
                 node.children[move] = OpeningTreeNode(move)
             node = node.children[move]
         node.eco_code = eco_code
+        node.family = family
         node.opening_name = opening_name
 
 
     def search(self, moves_list):
         node = self.root
-        last_valid_opening = None
         last_valid_eco = None
+        last_valid_family = None
+        last_valid_opening = None
 
         for move in moves_list:
             if move in node.children:
                 node = node.children[move]
                 if node.opening_name:
-                    last_valid_opening = node.opening_name
                     last_valid_eco = node.eco_code
+                    last_valid_family = node.family
+                    last_valid_opening = node.opening_name
             else:
                 break
 
-        if last_valid_eco and last_valid_opening:
-            return last_valid_eco, last_valid_opening
+        if last_valid_eco and last_valid_family and last_valid_opening:
+            return last_valid_eco, last_valid_family, last_valid_opening
         else:
             return None, None
 
