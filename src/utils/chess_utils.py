@@ -102,7 +102,7 @@ Creates aggregate win/loss summary data based on games Dataframe
 """
 def create_games_summary_dataframe(games_df):
     summary_df = (
-        games_df.groupby(["win_loss", "eco", "opening", "time_class"])
+        games_df.groupby(["win_loss", "eco", "family", "opening", "time_class"])
         .agg(game_count=("win_loss", "count"))
         .reset_index()
     )
