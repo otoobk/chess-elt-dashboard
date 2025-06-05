@@ -1,8 +1,9 @@
 import pandas as pd
+import re
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlparse
-import re
 from utils.file_utils import load_csv, save_csv
+from utils.opening_tree import OpeningTree
 
 """
 Extract ECO code from PGN
@@ -13,14 +14,22 @@ def extract_eco_code_from_pgn(pgn):
     match = re.search(r'\[ECO\s+"([A-E][0-9]{2})"\]', pgn)
     return match.group(1) if match else None
 
-def get_opening_name_from_url(url):
-    if not url:
+"""
+Extract moves list from PGN
+"""
+def extract_moves_list_from_pgn(pgn, moves_list_max_size):
+    if not pgn:
         return None
-    if isinstance(url, bytes):
-        url = url.decode("utf-8") 
-    path = urlparse(url).path
-    last_part = path.split("/")[-1]
-    return unquote(last_part.strip().replace("-", " ")).title()
+    pgn_moves_section = re.sub(r'\[.*?\]', '', pgn, flags=re.DOTALL)
+    pgn_moves_section = re.sub(r'\{.*?\}', '', pgn_moves_section)
+    pgn_moves_section = pgn_moves_section.replace('\n', ' ').strip()
+    pgn_moves_section = re.sub(r'(1-0|0-1|1/2-1/2|\*)$', '', pgn_moves_section).strip()
+    pgn_moves_section = re.sub(r'\d+\.(\.\.)?', '', pgn_moves_section).strip()
+    moves = pgn_moves_section.split()
+    return moves[:moves_list_max_size]
+
+def find_opening_name(openings_tree, row):
+        return openings_tree.search(row["eco"], row["moves_list"])
 
 def extract_pgn_datetime(pgn, date_tag="Date", time_tag="StartTime"):
     date_match = re.search(rf'\[{date_tag} "(\d{{4}}\.\d{{2}}\.\d{{2}})"\]', pgn)
@@ -46,8 +55,9 @@ def ts_to_dt(ts):
 """
 Create Pandas DataFrame based on games JSON list
 """
-def create_games_dataframe(username, games):
+def create_games_dataframe(username, games, openings_tree):
     rows = []
+    moves_list_max_size = openings_tree.get_max_depth()
     for g in games:
         white = g.get("white", {})
         black = g.get("black", {})
@@ -58,7 +68,6 @@ def create_games_dataframe(username, games):
         duration = (end - start).total_seconds() if start and end else None
 
         game_url = g.get("url")
-        game_id = game_url.rstrip("/").split("/")[-1] if game_url else None
 
         color_played = "white" if white.get("username") == username else "black"
         result_raw = white.get("result") if color_played == "white" else black.get("result")
@@ -73,29 +82,20 @@ def create_games_dataframe(username, games):
             win_loss = "other"
 
         rows.append({
-            "game_id": game_id,
+            "game_id": g.get("uuid"),
             "color_played": color_played,
             "user_rating": white.get("rating") if color_played == "white" else black.get("rating"),
             "opponent_rating": white.get("rating") if color_played == "black" else black.get("rating"),
             "win_loss": win_loss,
             "victory_method": result_raw,
-            "eco": extract_eco_code_from_pgn(pgn),
             "date": start.date() if start else None,
             "duration": duration,
             "time_class": g.get("time_class"),
             "rules": g.get("rules"),
-            "opening": get_opening_name_from_url(g.get("eco"))
+            "moves": extract_moves_list_from_pgn(pgn, moves_list_max_size),
         })
 
     return pd.DataFrame(rows)
-
-"""
-Parse proper Opening name from ECO URL
-"""
-def parse_opening_name(raw_eco):
-    if raw_eco.startswith("http"):
-        return unquote(raw_eco.split("/")[-1]).replace("-", " ").strip().lower()
-    return raw_eco.strip().lower()
 
 """
 Creates aggregate win/loss summary data based on games Dataframe
@@ -108,3 +108,21 @@ def create_games_summary_dataframe(games_df):
     )
     summary_df = summary_df.sort_values(by=["time_class", "win_loss", "game_count"], ascending=[False, False, False])
     return summary_df
+
+def create_openings_tree(openings_df):
+    openings_tree = OpeningTree()
+    for _, row in openings_df.iterrows():
+        moves = row["moves_list"]
+        eco = row["eco"]
+        name = row["name"]
+        openings_tree.insert(eco, moves, name)
+
+    #openings_tree.print_tree()
+    return openings_tree
+
+def calculate_eco_opening(games_df, openings_tree):
+    games_df[["eco", "opening"]] = games_df.apply(
+            lambda row: pd.Series(openings_tree.search(row["moves"])), axis=1
+        )
+    games_df = games_df.drop("moves", axis=1)
+    return games_df

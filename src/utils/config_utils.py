@@ -1,7 +1,6 @@
 import os
 import yaml
 import argparse
-from pathlib import Path
 
 current_file = os.path.abspath(__file__)
 PROJ_PATH = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
