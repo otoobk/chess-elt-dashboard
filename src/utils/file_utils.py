@@ -16,5 +16,8 @@ def load_json(path):
 def save_csv(df, path):
     df.to_csv(path, index=False)
 
+def save_csv_with_index(df, path):
+    df.to_csv(path, index=True)
+
 def load_csv(path):
     return pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
