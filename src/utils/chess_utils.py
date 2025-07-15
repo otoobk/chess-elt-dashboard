@@ -1,8 +1,7 @@
 import pandas as pd
+import numpy as np
 import re
 from datetime import datetime, timezone
-from urllib.parse import unquote, urlparse
-from utils.file_utils import load_csv, save_csv
 from utils.opening_tree import OpeningTree
 
 """
@@ -88,7 +87,7 @@ def create_games_dataframe(username, games, openings_tree):
             "opponent_rating": white.get("rating") if color_played == "black" else black.get("rating"),
             "win_loss": win_loss,
             "victory_method": result_raw,
-            "date": start.date() if start else None,
+            "date": start if start else None,
             "duration": duration,
             "time_class": g.get("time_class"),
             "rules": g.get("rules"),
@@ -127,3 +126,75 @@ def calculate_eco_opening(games_df, openings_tree):
         )
     games_df = games_df.drop("moves", axis=1)
     return games_df
+
+def create_games_metadata(games_df, last_n, kpi_results, top_openings_results):
+    for time_class, group in games_df.groupby("time_class"):
+        group = group.sort_values("date")
+
+        if group.empty:
+            continue    
+
+        current_elo = group.iloc[-1]["user_rating"]
+
+        if len(group) >= last_n:
+            prev_elo = group.iloc[-last_n]["user_rating"]
+            elo_change = current_elo - prev_elo
+            last_n_games = group.iloc[-last_n:]
+        else:
+            prev_elo = group.iloc[0]["user_rating"]
+            elo_change = current_elo - prev_elo
+            last_n_games = group
+
+        win_count = (group["win_loss"] == "win").sum()
+        loss_count = (group["win_loss"] == "loss").sum()
+        draw_count = (group["win_loss"] == "draw").sum()
+        total_games = len(group)
+
+        win_pct = (win_count / total_games) * 100 if total_games else None
+
+        win_count_last_n = (last_n_games["win_loss"] == "win").sum()
+        loss_count_last_n = (last_n_games["win_loss"] == "loss").sum()
+        draw_count_last_n = (last_n_games["win_loss"] == "draw").sum()
+        total_games_last_n = len(last_n_games)
+
+        win_pct_last_n = (win_count_last_n / total_games_last_n) * 100 if total_games_last_n else None
+
+        filtered = group[group["win_loss"].isin(["win", "loss"])]
+
+        top_openings = (
+            filtered.groupby(["opening", "win_loss"])
+            .size()
+            .reset_index(name="count")
+            .pivot_table(index="opening", columns="win_loss", values="count", fill_value=0)
+            .reset_index()
+        )
+
+        top_openings.columns.name = None
+        top_openings = top_openings.rename(columns={"win": "win_count", "loss": "loss_count"})
+
+        for col in ["win_count", "loss_count"]:
+            if col not in top_openings.columns:
+                top_openings[col] = 0
+
+        top_openings["total_games"] = top_openings["win_count"] + top_openings["loss_count"]
+        top_openings = top_openings.sort_values("total_games", ascending=False).head(5)
+
+        # Add time_class column to top openings for exporting
+        top_openings["time_class"] = time_class
+        top_openings_results.append(top_openings)
+
+        kpi_results.append({
+            "time_class": time_class,
+            "current_rating": current_elo,
+            "rating_change_last_n": elo_change,
+            "win_count": win_count,
+            "loss_count": loss_count,
+            "draw_count": draw_count,
+            "win_pct": np.round(win_pct, 2),
+            "win_count_10": win_count_last_n,
+            "loss_count_10": loss_count_last_n,
+            "draw_count_10": draw_count_last_n,
+            "win_pct_10": np.round(win_pct_last_n, 2)
+        })
+
+    return kpi_results, top_openings_results
