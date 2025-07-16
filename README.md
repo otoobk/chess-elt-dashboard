@@ -3,18 +3,12 @@ This project is a Python based batch data pipeline ingests and processes player 
 
 ## Setup
 ### Requirements
-- Python 3.8+
-- pip and virtualenv
+- Docker
 - Optional: BI Tools (Power BI, Tableau, etc.)
 
 ### Installation
-- Clone repo
-- Pull latest from develop
-- cd chess
-- python3 -m venv .venv
-- source .venv\Scripts\activate (on Windows)
-- python -m pip install --upgrade pip
-- pip install -r requirements.txt
-
-### Usage
-python ./src/main.py <optional --username username --allarchives>
+1. Clone repo
+2. Pull latest from develop
+3. cd chess
+4. docker-compuse build
+5. docker-compose run --rm spark-app <optional --username username --allarchives>

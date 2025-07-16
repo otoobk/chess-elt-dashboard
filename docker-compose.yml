@@ -1,0 +1,12 @@
+services:
+  spark-app:
+    build: .
+    container_name: pyspark-etl
+    volumes:
+      - ./data:/app/data
+    environment:
+      - SPARK_HOME=/opt/bitnami/spark
+      - PYSPARK_PYTHON=/env/bin/python
+      - PYSPARK_DRIVER_PYTHON=/env/bin/python
+    working_dir: /app
+    entrypoint: ["/opt/bitnami/spark/bin/spark-submit", "/app/src/main.py"]

@@ -3,3 +3,5 @@ duckdb
 argparse
 pandas
 numpy
+requests
+pyyaml
