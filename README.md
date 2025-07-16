@@ -121,4 +121,5 @@ After running, you'll find data in `/data/processed/`:
 
 **Brendan O'Toole**  
 _Data Engineer passionate about building scalable data pipelines and analytics platforms — and a chess nerd on the side ♟️_  
-[GitHub](https://github.com/otoobk) • [LinkedIn](https://www.linkedin.com/in/brendan-k-otoole/)
+[GitHub](https://github.com/otoobk) • [LinkedIn](https://www.linkedin.com/in/brendan-k-otoole/
+
