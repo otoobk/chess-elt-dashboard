@@ -9,7 +9,7 @@
 
 ## 📌 Overview
 
-`chess-elt-dashboard` is a modular and scalable **ELT** pipeline that ingests public game data from the Chess.com API, stages raw data to disk, and processes it using PySpark into optimized datasets for analytics and dashboarding. It simulates a production-grade, cloud-scalable architecture to showcase data engineering best practices like modularity, scalability, and reproducibility — making it perfect for portfolio use when applying to data roles.
+`chess-elt-dashboard` is a modular and scalable **ELT** pipeline that ingests public game data from the Chess.com API, stages raw data to disk, and processes it using PySpark into optimized datasets for analytics and dashboarding. It follows a **Medallion architecture (Bronze -> Silver -> Gold)** to simulates a production-grade, cloud-scalable design while applying data engineering best practices like modularity, scalability, and reproducibility.
 
 ---
 
@@ -19,9 +19,9 @@
 - **Processing Engine**: Apache Spark (PySpark)  
 - **Containerization**: Docker & Docker Compose  
 - **Data Source**: [Chess.com Public API](https://www.chess.com/news/view/published-data-api)  
-- **Output**: Structured data files (Parquet/CSV) on mounted volumes  
-- **Dashboarding**: Tableau / Power BI (via exported files)  
-- **Architecture**: ELT (Extract, Load, Transform)
+- **Storage**: JSON raw data, Parquet for internal tables, CSV exports for dashboarding
+- **Dashboarding**: Tableau / Power BI
+- **Architecture**: Medallion architecture (Bronze -> Silver -> Gold)
 
 ---
 
@@ -32,35 +32,45 @@
                   |   Chess.com API     |
                   +----------+----------+
                              |
-                         [Extract]
+                         [Extract/Load]
                              |
                              v
-                  +---------------------+
-                  | Raw JSON Game Files |
-                  +----------+----------+
-                             |
-                         [Load]
-                             |
-                             v
-                   +------------------+
-                   |  PySpark ETL Job |
-                   |  (transform step)|
-                   +--------+---------+
-                            |
-                         [Transform]
-                            |
-                   +----------------------+
-                   | Aggregated Datasets  |
-                   |   & Chess KPIs       |
-                   +----------+-----------+
-                              |
-                (Tableau / Power BI dashboards)
+   BRONZE  ---------->  +---------------------+
+ (Raw landing)          | Raw JSON Game Files |
+                         data/raw/<user>/...
+                        +----------+----------+
+                                   |
+                              [Transform]
+                                   |
+                                   v
+   SILVER  ---------->    +----------------------+
+ (Clean/normalized)       |   Curated Parquet    |
+                          |  (partitioned)       |
+                          data/clean/<user>_...  
+                         +-----------+-----------+
+                                     |
+                               [Aggregate]
+                                     |
+                                     v
+   GOLD  ------------->     +----------------------+
+ (Analytics-ready)          | Aggregations & KPIs  |
+                            |   (Parquet tables)   |
+                            data/final/<user>_...  
+                         +-----------+-----------+
+                                     |
+                               [Export]
+                                     |
+                                     v
+                         +-----------------------------+
+                         | CSVs for Dashboards (stable |
+                         | filenames)   data/exports/  |
+                         +-----------------------------+
 ```
 
 ### Key Design Highlights
 
-- 🧩 **Modular Components**: `api/`, `processing/`, `utils/`
-- 🧠 **Optimized Opening Classification**: Uses a **Trie Tree** structure for fast fuzzy matching
+- 🧩 **Modular Components**: `api_utils/`, `chess_utils/`, `spark_utils/`
+- 🧠 **Optimized Opening Classification**: Uses a **Prefix Tree** structure for fast fuzzy matching
 - ⚙️ **Scalable**: Designed to batch ingest thousands of games per user
 - 🐳 **Fully Dockerized**: Zero local setup required
 - 🔜 **Planned**: Airflow integration and data warehouse staging (e.g., Snowflake or Delta Lake)
@@ -86,10 +96,10 @@ docker-compose run --rm spark-app <optional --username username --allarchives>
 
 ## 📊 Output Structure
 
-After running, you'll find data in `/data/processed/`:
+After running, you'll find data in `/data/export/`:
 - `kpis.csv`: Game results, rating change, and win rates by time class
 - `top_openings.csv`: Most played openings (wins/losses)
-- `games_clean.csv`: Structured move-level data
+- `summary.csv`: Win/loss by openings
 - Output is dashboard-ready (load into Power BI / Tableau)
 
 ---
@@ -100,7 +110,7 @@ After running, you'll find data in `/data/processed/`:
 
 ## 🧠 Design Highlights
 
-- ✅ **ELT Architecture**: Raw data is staged before transformation
+- ✅ **ELT Medallion Architecture**: Raw data is staged before processing and aggregation
 - ✅ **PySpark Transformations**: Efficient and scalable for large user histories
 - ✅ **Trie Tree for Opening Detection**: Fast, flexible classification of chess openings
 - ✅ **Dockerized & Modular**: No external dependencies, code split into logical units
