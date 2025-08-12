@@ -1,5 +1,8 @@
 from pyspark.sql import SparkSession
 
+"""
+Gets or creates SparkSession for an app
+"""
 def get_spark_session(app_name: str = "SparkApp"):
     spark = (
         SparkSession.builder
@@ -15,5 +18,8 @@ def get_spark_session(app_name: str = "SparkApp"):
     
     return spark
 
+"""
+Stops SparkSession
+"""
 def stop_spark_session(spark: SparkSession):
     spark.stop()

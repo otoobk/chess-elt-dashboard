@@ -1,16 +1,28 @@
+"""
+Class to represent an opening node in an opening tree
+"""
+from typing import Tuple
+
+
 class OpeningTreeNode:
-    def __init__(self, move=None):
+    def __init__(self, move: str = None):
         self.move = move
         self.eco_code = None
         self.family = None
         self.opening_name = None
         self.children = {}
 
+"""
+Class to represent a tree of chess openings
+"""
 class OpeningTree:
     def __init__(self):
         self.root = OpeningTreeNode()
 
-    def insert(self, eco_code, family, moves_list, opening_name):
+    """
+    Inserts new opening if one does not exist in the tree
+    """
+    def insert(self, eco_code: str, family: str, moves_list: list, opening_name: str):
         node = self.root
         for move in moves_list:
             if move not in node.children:
@@ -20,8 +32,10 @@ class OpeningTree:
         node.family = family
         node.opening_name = opening_name
 
-
-    def search(self, moves_list):
+    """
+    Finds opening info based on list of moves
+    """
+    def search(self, moves_list: list) -> Tuple[str, str, str]:
         node = self.root
         last_valid_eco = None
         last_valid_family = None
@@ -42,17 +56,24 @@ class OpeningTree:
         else:
             return None, None
 
-
-
-    def _get_depth(self, node):
+    """
+    Gets depth of opening in tree
+    """
+    def _get_depth(self, node: OpeningTreeNode) -> int:
         if not node.children:
             return 1
         return 1 + max(self._get_depth(child) for child in node.children.values())
 
-    def get_max_depth(self):
+    """
+    Gets current max depth in opening tree
+    """
+    def get_max_depth(self) -> int:
         return self._get_depth(self.root)
 
-    def _print_node(self, node, prefix="", eco_filter=None):
+    """
+    Prints opening node
+    """
+    def _print_node(self, node: OpeningTreeNode, prefix: str = "", eco_filter: str = None):
         for move, child in node.children.items():
             display = f"{prefix}{move}"
             if child.opening_name and (eco_filter is None or child.eco_code == eco_filter):
@@ -63,7 +84,9 @@ class OpeningTree:
                 print(display)
                 self._print_node(child, prefix + "  ", eco_filter)
 
-
-    def print_tree(self, eco_filter=None):
+    """
+    Prints opening tree
+    """
+    def print_tree(self, eco_filter: str = None):
         print("Opening Tree:")
         self._print_node(self.root, prefix="", eco_filter=eco_filter)

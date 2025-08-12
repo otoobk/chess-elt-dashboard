@@ -1,15 +1,19 @@
-import pandas as pd
-import numpy as np
 import re
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+import pandas as pd
+from pyspark.sql import DataFrame, SparkSession, Window
 from pyspark.sql import functions as F
-from pyspark.sql import Window
+
+from utils.file_utils import *
 from utils.opening_tree import OpeningTree
 
 """
 Extract ECO code from PGN
 """
-def extract_eco_code_from_pgn(pgn):
+def extract_eco_code_from_pgn(pgn: str) -> str:
     if not pgn:
         return None
     match = re.search(r'\[ECO\s+"([A-E][0-9]{2})"\]', pgn)
@@ -18,7 +22,7 @@ def extract_eco_code_from_pgn(pgn):
 """
 Extract moves list from PGN
 """
-def extract_moves_list_from_pgn(pgn, moves_list_max_size):
+def extract_moves_list_from_pgn(pgn: str, moves_list_max_size: int) -> list:
     if not pgn:
         return None
     pgn_moves_section = re.sub(r'\[.*?\]', '', pgn, flags=re.DOTALL)
@@ -29,10 +33,16 @@ def extract_moves_list_from_pgn(pgn, moves_list_max_size):
     moves = pgn_moves_section.split()
     return moves[:moves_list_max_size]
 
-def find_opening_name(openings_tree, row):
+"""
+Returns opening name based on game
+"""
+def find_opening_name(openings_tree: OpeningTree, row: pd.Series)-> str:
         return openings_tree.search(row["eco"], row["moves_list"])
 
-def extract_pgn_datetime(pgn, date_tag="Date", time_tag="StartTime"):
+"""
+Returns game datetime based on game
+"""
+def extract_pgn_datetime(pgn: str, date_tag: str = "Date", time_tag: str = "StartTime") -> datetime:
     date_match = re.search(rf'\[{date_tag} "(\d{{4}}\.\d{{2}}\.\d{{2}})"\]', pgn)
     time_match = re.search(rf'\[{time_tag} "(\d{{2}}:\d{{2}}:\d{{2}})"\]', pgn)
     if date_match and time_match:
@@ -47,7 +57,7 @@ def extract_pgn_datetime(pgn, date_tag="Date", time_tag="StartTime"):
 """
 Convert Timestamp to Datetime
 """
-def ts_to_dt(ts):
+def ts_to_dt(ts: pd.Timestamp) -> datetime:
             try:
                 return datetime.fromtimestamp(ts, tz=timezone.utc)
             except Exception:
@@ -56,7 +66,7 @@ def ts_to_dt(ts):
 """
 Create Pandas DataFrame based on games JSON list
 """
-def create_games_dataframe(username, games, openings_tree):
+def create_games_dataframe(username: str, games: List[Dict], openings_tree: OpeningTree) -> pd.DataFrame:
     rows = []
     moves_list_max_size = openings_tree.get_max_depth()
     for g in games:
@@ -100,12 +110,22 @@ def create_games_dataframe(username, games, openings_tree):
     return pd.DataFrame(rows)
 
 """
-Creates aggregate win/loss summary data based on games Dataframe
+Creates aggregate win/loss summary data 
+by time class
 """
-def create_games_summary_dataframe(spark, games_sdf):
+def create_games_summary_dataframe(spark: SparkSession, username: str, clean_dir: str, time_classes: Optional[List[str]] = None) -> DataFrame:
+    ensure_dir(clean_dir)
+
+    path = str(Path(clean_dir) / f"{username}_games")
+
+    sdf = spark.read.parquet(path)
+
+    if time_classes:
+        sdf = sdf.filter(F.col("time_class").isin(time_classes))
+
     summary_sdf = (
-        games_sdf.groupBy("win_loss", "eco", "family", "opening", "time_class")
-           .agg(F.count("*").alias("game_count"))
+        sdf.groupBy("win_loss", "eco", "family", "opening", "time_class")
+           .agg(F.count(F.lit(1)).alias("game_count"))
            .orderBy(
                F.col("time_class").desc(),
                F.col("win_loss").desc(),
@@ -114,7 +134,10 @@ def create_games_summary_dataframe(spark, games_sdf):
     )
     return summary_sdf
 
-def create_openings_tree(openings_df):
+"""
+Creates tree of chess openings
+"""
+def create_openings_tree(openings_df: pd.DataFrame):
     openings_tree = OpeningTree()
     for _, row in openings_df.iterrows():
         moves = row["moves_list"]
@@ -123,17 +146,28 @@ def create_openings_tree(openings_df):
         name = row["name"]
         openings_tree.insert(eco, family, moves, name)
 
-    #openings_tree.print_tree()
     return openings_tree
 
-def calculate_eco_opening(games_df, openings_tree):
+"""
+Calculates ECO, opening, opening family
+"""
+def calculate_eco_opening(games_df: pd.DataFrame, openings_tree: OpeningTree) -> pd.DataFrame:
     games_df[["eco", "family", "opening"]] = games_df.apply(
             lambda row: pd.Series(openings_tree.search(row["moves"])), axis=1
         )
     games_df = games_df.drop("moves", axis=1)
     return games_df
 
-def create_games_metadata(spark, games_sdf, last_n):
+"""
+Calculates game metadata and KPIs
+"""
+def create_games_metadata(spark: SparkSession, username: str, last_n: int, clean_dir: str, time_classes: Optional[List[str]] = None) -> Tuple[DataFrame, DataFrame]:
+    path = str(Path(clean_dir) / f"{username}_games")
+    games_sdf = spark.read.parquet(path)
+    
+    if time_classes:
+        games_sdf = games_sdf.filter(F.col("time_class").isin(time_classes))
+
     games_sdf = (
         games_sdf
         .withColumn("date", F.to_timestamp("date"))
@@ -209,6 +243,9 @@ def create_games_metadata(spark, games_sdf, last_n):
 
     return kpis_sdf, top_openings_sdf
 
-def clean_openings_pdf(openings_pdf):
+"""
+Cleans PGN moves list
+"""
+def clean_openings_pdf(openings_pdf: pd.DataFrame) -> pd.DataFrame:
     openings_pdf["moves_list"] = openings_pdf["pgn"].str.replace(r"\d+\.", "", regex=True).str.strip().str.split()
     return openings_pdf
