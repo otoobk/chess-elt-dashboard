@@ -1,7 +1,9 @@
 pathlib
 duckdb
 argparse
-pandas
+pandas<2.0
 numpy
 requests
 pyyaml
+pyspark
+pyarrow

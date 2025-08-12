@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import re
 from datetime import datetime, timezone
+from pyspark.sql import functions as F
+from pyspark.sql import Window
 from utils.opening_tree import OpeningTree
 
 """
@@ -88,6 +90,7 @@ def create_games_dataframe(username, games, openings_tree):
             "win_loss": win_loss,
             "victory_method": result_raw,
             "date": start if start else None,
+            "year": start.year if start else None,
             "duration": duration,
             "time_class": g.get("time_class"),
             "rules": g.get("rules"),
@@ -99,14 +102,17 @@ def create_games_dataframe(username, games, openings_tree):
 """
 Creates aggregate win/loss summary data based on games Dataframe
 """
-def create_games_summary_dataframe(games_df):
-    summary_df = (
-        games_df.groupby(["win_loss", "eco", "family", "opening", "time_class"])
-        .agg(game_count=("win_loss", "count"))
-        .reset_index()
+def create_games_summary_dataframe(spark, games_sdf):
+    summary_sdf = (
+        games_sdf.groupBy("win_loss", "eco", "family", "opening", "time_class")
+           .agg(F.count("*").alias("game_count"))
+           .orderBy(
+               F.col("time_class").desc(),
+               F.col("win_loss").desc(),
+               F.col("game_count").desc()
+           )
     )
-    summary_df = summary_df.sort_values(by=["time_class", "win_loss", "game_count"], ascending=[False, False, False])
-    return summary_df
+    return summary_sdf
 
 def create_openings_tree(openings_df):
     openings_tree = OpeningTree()
@@ -127,74 +133,82 @@ def calculate_eco_opening(games_df, openings_tree):
     games_df = games_df.drop("moves", axis=1)
     return games_df
 
-def create_games_metadata(games_df, last_n, kpi_results, top_openings_results):
-    for time_class, group in games_df.groupby("time_class"):
-        group = group.sort_values("date")
+def create_games_metadata(spark, games_sdf, last_n):
+    games_sdf = (
+        games_sdf
+        .withColumn("date", F.to_timestamp("date"))
+        .withColumn("user_rating", F.col("user_rating").cast("int"))
+    )
 
-        if group.empty:
-            continue    
+    w_part = Window.partitionBy("time_class")
+    w_asc  = Window.partitionBy("time_class").orderBy(F.col("date").asc())
+    w_desc = Window.partitionBy("time_class").orderBy(F.col("date").desc())
 
-        current_elo = group.iloc[-1]["user_rating"]
+    df = (
+        games_sdf
+        .withColumn("rn_asc",  F.row_number().over(w_asc))
+        .withColumn("rn_desc", F.row_number().over(w_desc))
+        .withColumn("n_rows",  F.count(F.lit(1)).over(w_part))
+    )
 
-        if len(group) >= last_n:
-            prev_elo = group.iloc[-last_n]["user_rating"]
-            elo_change = current_elo - prev_elo
-            last_n_games = group.iloc[-last_n:]
-        else:
-            prev_elo = group.iloc[0]["user_rating"]
-            elo_change = current_elo - prev_elo
-            last_n_games = group
+    df = df.withColumn(
+        "target_prev_rn",
+        F.when(F.col("n_rows") >= F.lit(last_n),
+               F.col("n_rows") - F.lit(last_n) + F.lit(1)
+        ).otherwise(F.lit(1))
+    )
 
-        win_count = (group["win_loss"] == "win").sum()
-        loss_count = (group["win_loss"] == "loss").sum()
-        draw_count = (group["win_loss"] == "draw").sum()
-        total_games = len(group)
+    df = (
+        df
+        .withColumn("current_elo_cand", F.when(F.col("rn_desc") == 1, F.col("user_rating")))
+        .withColumn("prev_elo_cand",    F.when(F.col("rn_asc")  == F.col("target_prev_rn"), F.col("user_rating")))
+        .withColumn("is_last_n",        F.col("rn_desc") <= F.lit(last_n))
+    )
 
-        win_pct = (win_count / total_games) * 100 if total_games else None
-
-        win_count_last_n = (last_n_games["win_loss"] == "win").sum()
-        loss_count_last_n = (last_n_games["win_loss"] == "loss").sum()
-        draw_count_last_n = (last_n_games["win_loss"] == "draw").sum()
-        total_games_last_n = len(last_n_games)
-
-        win_pct_last_n = (win_count_last_n / total_games_last_n) * 100 if total_games_last_n else None
-
-        filtered = group[group["win_loss"].isin(["win", "loss"])]
-
-        top_openings = (
-            filtered.groupby(["opening", "win_loss"])
-            .size()
-            .reset_index(name="count")
-            .pivot_table(index="opening", columns="win_loss", values="count", fill_value=0)
-            .reset_index()
+    kpis_sdf = (
+        df.groupBy("time_class").agg(
+            F.max("current_elo_cand").alias("current_rating"),
+            F.max("prev_elo_cand").alias("prev_rating"),
+            F.sum(F.when(F.col("win_loss")=="win",  1).otherwise(0)).alias("win_count"),
+            F.sum(F.when(F.col("win_loss")=="loss", 1).otherwise(0)).alias("loss_count"),
+            F.sum(F.when(F.col("win_loss")=="draw", 1).otherwise(0)).alias("draw_count"),
+            F.count(F.lit(1)).alias("total_games"),
+            F.sum(F.when((F.col("win_loss")=="win")  & F.col("is_last_n"), 1).otherwise(0)).alias("win_count_last_n"),
+            F.sum(F.when((F.col("win_loss")=="loss") & F.col("is_last_n"), 1).otherwise(0)).alias("loss_count_last_n"),
+            F.sum(F.when((F.col("win_loss")=="draw") & F.col("is_last_n"), 1).otherwise(0)).alias("draw_count_last_n"),
+            F.sum(F.when(F.col("is_last_n"), 1).otherwise(0)).alias("total_games_last_n"),
         )
+        .withColumn("rating_change_last_n", F.col("current_rating") - F.col("prev_rating"))
+        .withColumn("win_pct", F.round(F.col("win_count")/F.col("total_games")*100, 2))
+        .withColumn("win_pct_last_n", F.round(F.col("win_count_last_n")/F.col("total_games_last_n")*100, 2))
+        .select(
+            "time_class","current_rating","rating_change_last_n",
+            "win_count","loss_count","draw_count","win_pct",
+            "win_count_last_n","loss_count_last_n","draw_count_last_n","win_pct_last_n"
+        )
+    )
 
-        top_openings.columns.name = None
-        top_openings = top_openings.rename(columns={"win": "win_count", "loss": "loss_count"})
+    wl = df.filter(F.col("win_loss").isin("win","loss"))
+    top_openings_sdf = (
+        wl.groupBy("time_class","color_played","opening")
+          .pivot("win_loss", ["win","loss"])
+          .agg(F.count(F.lit(1)))
+          .na.fill(0, subset=["win","loss"])
+          .withColumnRenamed("win","win_count")
+          .withColumnRenamed("loss","loss_count")
+          .withColumn("total_games", F.col("win_count") + F.col("loss_count"))
+    )
 
-        for col in ["win_count", "loss_count"]:
-            if col not in top_openings.columns:
-                top_openings[col] = 0
+    rank_w = Window.partitionBy(["time_class","color_played"]).orderBy(F.col("total_games").desc(), F.col("opening").asc())
+    top_openings_sdf = (
+        top_openings_sdf
+        .withColumn("rank", F.row_number().over(rank_w))
+        .filter(F.col("rank") <= 5)
+        .drop("rank")
+    )
 
-        top_openings["total_games"] = top_openings["win_count"] + top_openings["loss_count"]
-        top_openings = top_openings.sort_values("total_games", ascending=False).head(5)
+    return kpis_sdf, top_openings_sdf
 
-        # Add time_class column to top openings for exporting
-        top_openings["time_class"] = time_class
-        top_openings_results.append(top_openings)
-
-        kpi_results.append({
-            "time_class": time_class,
-            "current_rating": current_elo,
-            "rating_change_last_n": elo_change,
-            "win_count": win_count,
-            "loss_count": loss_count,
-            "draw_count": draw_count,
-            "win_pct": np.round(win_pct, 2),
-            "win_count_10": win_count_last_n,
-            "loss_count_10": loss_count_last_n,
-            "draw_count_10": draw_count_last_n,
-            "win_pct_10": np.round(win_pct_last_n, 2)
-        })
-
-    return kpi_results, top_openings_results
+def clean_openings_pdf(openings_pdf):
+    openings_pdf["moves_list"] = openings_pdf["pgn"].str.replace(r"\d+\.", "", regex=True).str.strip().str.split()
+    return openings_pdf

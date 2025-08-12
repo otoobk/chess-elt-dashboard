@@ -28,7 +28,12 @@ Returns JSON file name based on archive URL
 """
 def archive_to_filename(archive_url, username, raw_dir):
     parts = archive_url.strip("/").split("/")[-2:]
-    return os.path.join(raw_dir, username + "_" + "_".join(parts) + ".json")
+
+    dir_path = os.path.join(raw_dir, username, parts[0], parts[1])
+    
+    os.makedirs(dir_path, exist_ok=True)
+    
+    return os.path.join(dir_path, "games.json")
 
 """
 Returns all JSON games data
@@ -43,7 +48,7 @@ def fetch_all_games(username, raw_dir, headers, all_archives):
         year_ago_date = datetime.now() - relativedelta(years=1)
         archives = [
             url for url in archives
-            if datetime(int(url.split("/")[-2]), int(url.split("/")[-1]), 1) >= year_ago_date
+            if get_archive_url_datetime(url) >= year_ago_date
         ]
 
     for archive_url in archives:
@@ -60,3 +65,6 @@ def fetch_all_games(username, raw_dir, headers, all_archives):
         all_games.extend(games)
 
     return all_games
+
+def get_archive_url_datetime(url):
+    return datetime(int(url.split("/")[-2]), int(url.split("/")[-1]), 1)
