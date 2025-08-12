@@ -1,9 +1,10 @@
-import os
-import yaml
 import argparse
+import os
 
-current_file = os.path.abspath(__file__)
-PROJ_PATH = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+import yaml
+
+CURRENT_FILE = os.path.abspath(__file__)
+PROJ_PATH = os.path.dirname(os.path.dirname(os.path.dirname(CURRENT_FILE)))
 CONFIG_PATH = os.path.join(PROJ_PATH, "config.yaml")
 
 """
@@ -16,7 +17,7 @@ def load_config():
 """
 Parses command line arguements
 """
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--username", type=str)
     parser.add_argument("--allarchives", action="store_true")
@@ -24,9 +25,9 @@ def parse_args():
     return parser.parse_args()
 
 """
-Modified config based on command line arguements
+Modifies config values based on command line arguements
 """
-def build_final_config(config, args):
+def build_final_config(config, args: argparse.Namespace):
     final_config = config.copy()
     
     if args.username:
